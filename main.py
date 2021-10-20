@@ -20,6 +20,7 @@ score = 0
 pos_evaluated = 0
 quiesce_search = 0
 best_engine_score = 0
+used_trans_table_lookup = 0
 
 pygame.init()
 pygame.font.init()
@@ -113,6 +114,8 @@ pv = {
 move_history = []
 
 trans_table = dict()
+remember_move = None
+best_move = None
 
 
 class hash_entry:
@@ -214,25 +217,56 @@ def eval_board():
 
 
 def min_max_with_pruning(alpha, beta, depth_left):
-    # hash = chess.polyglot.zobrist_hash(board)
+    type = 'alpha'
+    temp = probe_hash(depth_left, alpha, beta)
+    if temp != 'unknown':
+        global used_trans_table_lookup
+        used_trans_table_lookup += 1
+        return temp
     global pos_evaluated
     pos_evaluated += 1
-    best_score = -9999
     if depth_left == 0:
+        record_Hash(depth_left, alpha, 'exact')
         return quiesce(alpha, beta)
     for move in board.legal_moves:
         board.push(move)
-        score = -min_max_with_pruning(-beta, -alpha, depth_left - 1)
+        global remember_move
+        remember_move = move
+        current_score = -min_max_with_pruning(-beta, -alpha, depth_left - 1)
         board.pop()
-        if score >= beta:
-            # trans_table[hash] = hash_entry(hash, depth_left, score, move, 'exact')
-            return score
-        if score > best_score:
-            best_score = score
-        if score > alpha:
-            alpha = score
-            # trans_table[hash] = hash_entry(hash, depth_left, score, move, 'alpha')
-    return best_score
+        if current_score >= beta:
+            record_Hash(depth_left, beta, 'beta')
+            return current_score
+        if current_score > alpha:
+            alpha = current_score
+            type = 'exact'
+
+    record_Hash(depth_left, alpha, type)
+    return alpha
+
+
+def probe_hash(depth, alpha, beta):
+    zob = chess.polyglot.zobrist_hash(board)
+    if zob in trans_table.keys():
+        entry = trans_table[zob]
+        if entry.depth >= depth:
+            if entry.flag == 'exact':
+                return entry.score
+            if entry.flag == 'alpha' and entry.score <= alpha:
+                return alpha
+            if entry.flag == 'beta' and entry.score >= beta:
+                return beta
+        else:
+            global best_move
+            best_move = remember_move
+    else:
+        return 'unknown'
+
+
+def record_Hash(depth, val, hash_type):
+    zob = chess.polyglot.zobrist_hash(board)
+    global best_move
+    trans_table[zob] = hash_entry(zob, depth, val, best_move, hash_type)
 
 
 def quiesce(alpha, beta):
@@ -266,7 +300,6 @@ def select_move(depth):
         best_engine_score = - eval_board()
         return move
     except:
-        print("search")
 
         global trans_table
         best_move = chess.Move.null()
@@ -275,28 +308,26 @@ def select_move(depth):
         beta = 100000
         moves = board.legal_moves
 
-        for x in range(0, 2):
+        for i in range(0, depth + 2):
+            start_time = time.time()
+            print("\n Searching depth " + str(i))
+            trans_table.clear()
+            draw_sideboard(surface)
+            display_searching(surface)
+            for move in moves:
+                board.push(move)
+                board_value = -min_max_with_pruning(-beta, -alpha, depth - 1)
+                if board_value > best_value:
+                    best_value = board_value
+                    best_move = move
+                if board_value > alpha:
+                    alpha = board_value
+                z_hash = chess.polyglot.zobrist_hash(board)
+                trans_table[z_hash] = hash_entry(z_hash, depth, board_value, move, 'exact')
+                board.pop()
+            print("took " + str(time.time() - start_time) + "seconds at depth " + str(i))
 
-            for i in range(2, depth + 2):
-                start_time = time.time()
-                print("\n Searching depth " + str(i))
-                trans_table.clear()
-                for move in moves:
-                    board.push(move)
-                    board_value = -min_max_with_pruning(-beta, -alpha, depth - 1)
-                    if board_value > best_value:
-                        best_value = board_value
-                        best_move = move
-                    if board_value > alpha:
-                        alpha = board_value
-                    z_hash = chess.polyglot.zobrist_hash(board)
-                    trans_table[z_hash] = hash_entry(z_hash, depth, board_value, move, 'exact')
-                    board.pop()
-                if x == 1:
-                    print("moves are sorted")
-                    moves = sort_moves()
-                    print("done sorting")
-                print("took " + str(time.time() - start_time) + "seconds at depth " + str(i))
+
         best_engine_score = - best_value
         move_history.append(best_move.uci())
         return best_move
@@ -347,7 +378,6 @@ def make_move(ps, ds):
     ds_row = 8 - ds[0]
     ds_col = number_to_text(ds[1])
     string = ps_col + str(ps_row) + ds_col + str(ds_row)
-    print(string)
     move = chess.Move.from_uci(string)
     if move in board.legal_moves:
         board.push(move)
@@ -369,9 +399,14 @@ def draw_sideboard(surface):
     textRect.center = (9 * tilesize + tilesize / 2, 0.7 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
 
-    text = font.render("Evaluation " + str(best_engine_score / 100), True, white)
+    text = font.render("Hashtable lookups " + str(used_trans_table_lookup), True, white)
     textRect = text.get_rect()
     textRect.center = (9 * tilesize + tilesize / 2, 1 * tilesize + tilesize / 2)
+    surface.blit(text, textRect)
+
+    text = font.render("Evaluation " + str(best_engine_score / 100), True, white)
+    textRect = text.get_rect()
+    textRect.center = (9 * tilesize + tilesize / 2, 1.3 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
     pygame.display.update()
 
@@ -417,12 +452,12 @@ if __name__ == '__main__':
                 display_searching(surface)
                 pos_evaluated = 0
                 quiesce_search = 0
+                used_trans_table_lookup = 0
                 mov = select_move(3)
                 draw_sideboard(surface)
                 board.push(mov)
                 draw_board(surface)
                 pygame.display.update()
-                sleep(0.3)
 
         draw_board(surface)
         pygame.display.update()
