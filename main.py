@@ -227,7 +227,7 @@ def min_max_with_pruning(alpha, beta, depth_left):
     pos_evaluated += 1
     if depth_left == 0:
         record_Hash(depth_left, alpha, 'exact')
-        return quiesce(alpha, beta)
+        return quiesce(alpha, beta, 0)
     for move in board.legal_moves:
         board.push(move)
         global remember_move
@@ -269,7 +269,10 @@ def record_Hash(depth, val, hash_type):
     trans_table[zob] = hash_entry(zob, depth, val, best_move, hash_type)
 
 
-def quiesce(alpha, beta):
+def quiesce(alpha, beta, local_quiesce):
+    local_quiesce += 1
+    if local_quiesce > 10:
+        return beta
     global quiesce_search
     quiesce_search += 1
     current_score = eval_board()
@@ -281,7 +284,7 @@ def quiesce(alpha, beta):
     for move in board.legal_moves:
         if board.is_capture(move):
             board.push(move)
-            board_score = -quiesce(-beta, -alpha)
+            board_score = -quiesce(-beta, -alpha, local_quiesce)
             board.pop()
 
             if board_score >= beta:
@@ -315,6 +318,8 @@ def select_move(depth):
             draw_sideboard(surface)
             display_searching(surface)
             for move in moves:
+                draw_sideboard(surface)
+                display_searching(surface)
                 board.push(move)
                 board_value = -min_max_with_pruning(-beta, -alpha, depth - 1)
                 if board_value > best_value:
@@ -379,6 +384,7 @@ def make_move(ps, ds):
     ds_col = number_to_text(ds[1])
     string = ps_col + str(ps_row) + ds_col + str(ds_row)
     move = chess.Move.from_uci(string)
+    print(move)
     if move in board.legal_moves:
         board.push(move)
 
@@ -407,6 +413,12 @@ def draw_sideboard(surface):
     text = font.render("Evaluation " + str(best_engine_score / 100), True, white)
     textRect = text.get_rect()
     textRect.center = (9 * tilesize + tilesize / 2, 1.3 * tilesize + tilesize / 2)
+    surface.blit(text, textRect)
+
+
+    text = font.render("Movelist " + str(move_history), True, white)
+    textRect = text.get_rect()
+    textRect.center = (9 * tilesize + tilesize / 2, 1.6 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
     pygame.display.update()
 
