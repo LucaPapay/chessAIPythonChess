@@ -30,14 +30,14 @@ font = pygame.font.Font(pygame.font.get_default_font(), 20)
 pygame.display.set_caption("Luca's Chess Ai")
 
 pawn_table = [
-    0, 0, 0, 0, 0, 0, 0, 0,
-    5, 10, 10, -20, -20, 10, 10, 5,
-    5, -5, -10, 0, 0, -10, -5, 5,
-    0, 0, 0, 20, 20, 0, 0, 0,
-    5, 5, 10, 25, 25, 10, 5, 5,
-    10, 10, 20, 30, 30, 20, 10, 10,
-    50, 50, 50, 50, 50, 50, 50, 50,
-    0, 0, 0, 0, 0, 0, 0, 0]
+  0, 0, 0, 0, 0, 0, 0, 0,
+5, 10, 10, -20, -20, 10, 10, 5,
+5, -5, -10, 0, 0, -10, -5, 5,
+0, 0, 0, 20, 20, 0, 0, 0,
+5, 5, 10, 25, 25, 10, 5, 5,
+10, 10, 20, 30, 30, 20, 10, 10,
+50, 50, 50, 50, 50, 50, 50, 50,
+0, 0, 0, 0, 0, 0, 0, 0]
 
 knights_table = [
     -50, -40, -30, -30, -30, -30, -40, -50,
@@ -385,8 +385,9 @@ def make_move(ps, ds):
     string = ps_col + str(ps_row) + ds_col + str(ds_row)
     move = chess.Move.from_uci(string)
     print(move)
-    if move in board.legal_moves:
-        board.push(move)
+    if ps_col + str(ps_row) != ds_col + str(ds_row):
+        if move in board.legal_moves:
+            board.push(move)
 
 
 def draw_sideboard(surface):
