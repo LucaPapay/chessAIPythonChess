@@ -383,9 +383,9 @@ def make_move(ps, ds):
     ds_row = 8 - ds[0]
     ds_col = number_to_text(ds[1])
     string = ps_col + str(ps_row) + ds_col + str(ds_row)
-    move = chess.Move.from_uci(string)
-    print(move)
     if ps_col + str(ps_row) != ds_col + str(ds_row):
+        move = chess.Move.from_uci(string)
+        print(move)
         if move in board.legal_moves:
             board.push(move)
 
