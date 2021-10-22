@@ -246,6 +246,7 @@ def min_max_with_pruning(alpha, beta, depth_left):
 
 
 def probe_hash(depth, alpha, beta):
+    return 'unknown'
     zob = chess.polyglot.zobrist_hash(board)
     if zob in trans_table.keys():
         entry = trans_table[zob]
