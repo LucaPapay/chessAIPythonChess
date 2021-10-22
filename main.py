@@ -280,13 +280,13 @@ def record_Hash(depth, val, hash_type):
     trans_table[zob] = hash_entry(zob, depth, val, best_move, hash_type)
 
 
-def quiesce(alpha, beta):
+def quiesce(alpha, beta, q_depth = 8):
     global quiesce_search
     quiesce_search += 1
 
     # dont check more captures if you are in check
-    if board.is_check():
-        return min_max_with_pruning(alpha, beta, 1)
+    # if board.is_check():
+    #    return min_max_with_pruning(alpha, beta, 1)
 
     current_score = eval_board()
     if current_score >= beta:
@@ -294,12 +294,15 @@ def quiesce(alpha, beta):
     if alpha < current_score:
         alpha = current_score
 
+    if q_depth == 0:
+        return alpha
+
     sorted_captures = sort_capture_moves(board.legal_moves)
 
     for move in sorted_captures:
 
         board.push(move)
-        board_score = -quiesce(-beta, -alpha)
+        board_score = -quiesce(-beta, -alpha, q_depth - 1)
         board.pop()
 
         if board_score >= beta:
@@ -315,26 +318,35 @@ def sort_capture_moves(moves):
         if board.is_capture(move):
             captures.append(move)
 
-    pawn = list()
-    bN = list()
-    rook = list()
-    queen = list()
-    king = list()
+    big = list()
+    med = list()
+    zero = list()
+    negative = list()
+    big_negative = list()
 
     for c in captures:
-        piece = board.piece_at(c.from_square)
-        if piece.piece_type == 1:
-            pawn.append(c)
-        if piece.piece_type == 2 or piece.piece_type == 3:
-            bN.append(c)
-        if piece.piece_type == 4:
-            rook.append(c)
-        if piece.piece_type == 5:
-            queen.append(c)
-        if piece.piece_type == 6:
-            king.append(c)
+        piece_type_start = board.piece_at(c.from_square).piece_type
 
-    sorted_captures = pawn + bN + rook + queen + king
+        piece_end = board.piece_at(c.to_square)
+
+        # piece_end is none if en passant capture
+        if piece_end is None:
+            piece_type_end = 1
+        else:
+            piece_type_end = piece_end.piece_type
+
+        if piece_type_end - piece_type_start >= 3:
+            big.append(c)
+        elif piece_type_end - piece_type_start >= 1:
+            med.append(c)
+        elif piece_type_end - piece_type_start == 0:
+            zero.append(c)
+        elif piece_type_end - piece_type_start <= -3:
+            big_negative.append(c)
+        else:
+            negative.append(c)
+
+    sorted_captures = big + med + zero + negative + big_negative
     return sorted_captures
 
 
@@ -431,6 +443,10 @@ def make_move(ps, ds):
         print(move)
         if move in board.legal_moves:
             board.push(move)
+            # false = blacks turn
+            return False
+        else:
+            return True
 
 
 def draw_sideboard(surface):
@@ -501,8 +517,7 @@ if __name__ == '__main__':
                         else:
                             ds = select_square()
                             selected = False
-                            make_move(ps, ds)
-                            playerColor = not playerColor
+                            playerColor = make_move(ps, ds)
 
                 draw_board(surface)
                 pygame.display.update()
