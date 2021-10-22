@@ -30,14 +30,14 @@ font = pygame.font.Font(pygame.font.get_default_font(), 20)
 pygame.display.set_caption("Luca's Chess Ai")
 
 pawn_table = [
-  0, 0, 0, 0, 0, 0, 0, 0,
-5, 10, 10, -20, -20, 10, 10, 5,
-5, -5, -10, 0, 0, -10, -5, 5,
-0, 0, 0, 20, 20, 0, 0, 0,
-5, 5, 10, 25, 25, 10, 5, 5,
-10, 10, 20, 30, 30, 20, 10, 10,
-50, 50, 50, 50, 50, 50, 50, 50,
-0, 0, 0, 0, 0, 0, 0, 0]
+    0, 0, 0, 0, 0, 0, 0, 0,
+    5, 10, 10, -20, -20, 10, 10, 5,
+    5, -5, -10, 0, 0, -10, -5, 5,
+    0, 0, 0, 20, 20, 0, 0, 0,
+    5, 5, 10, 25, 25, 10, 5, 5,
+    10, 10, 20, 30, 30, 20, 10, 10,
+    50, 50, 50, 50, 50, 50, 50, 50,
+    0, 0, 0, 0, 0, 0, 0, 0]
 
 knights_table = [
     -50, -40, -30, -30, -30, -30, -40, -50,
@@ -219,24 +219,34 @@ def eval_board():
 def min_max_with_pruning(alpha, beta, depth_left):
     type = 'alpha'
     temp = probe_hash(depth_left, alpha, beta)
+
+    # Hashtable check
     if temp != 'unknown':
         global used_trans_table_lookup
         used_trans_table_lookup += 1
         return temp
     global pos_evaluated
+
     pos_evaluated += 1
+
+    # depth 0 start quiesce
     if depth_left == 0:
-        record_Hash(depth_left, alpha, 'exact')
-        return quiesce(alpha, beta, 0)
+        value = quiesce(alpha, beta)
+        record_Hash(depth_left, value, 'exact')
+        return value
+
+    # depth >0 search all legal moves
     for move in board.legal_moves:
         board.push(move)
         global remember_move
         remember_move = move
         current_score = -min_max_with_pruning(-beta, -alpha, depth_left - 1)
         board.pop()
+
         if current_score >= beta:
             record_Hash(depth_left, beta, 'beta')
-            return current_score
+            return beta
+
         if current_score > alpha:
             alpha = current_score
             type = 'exact'
@@ -246,7 +256,7 @@ def min_max_with_pruning(alpha, beta, depth_left):
 
 
 def probe_hash(depth, alpha, beta):
-    return 'unknown'
+    # return 'unknown'
     zob = chess.polyglot.zobrist_hash(board)
     if zob in trans_table.keys():
         entry = trans_table[zob]
@@ -260,8 +270,8 @@ def probe_hash(depth, alpha, beta):
         else:
             global best_move
             best_move = remember_move
-    else:
-        return 'unknown'
+
+    return 'unknown'
 
 
 def record_Hash(depth, val, hash_type):
@@ -270,29 +280,62 @@ def record_Hash(depth, val, hash_type):
     trans_table[zob] = hash_entry(zob, depth, val, best_move, hash_type)
 
 
-def quiesce(alpha, beta, local_quiesce):
-    local_quiesce += 1
-    if local_quiesce > 10:
-        return beta
+def quiesce(alpha, beta):
     global quiesce_search
     quiesce_search += 1
+
+    # dont check more captures if you are in check
+    if board.is_check():
+        return min_max_with_pruning(alpha, beta, 1)
+
     current_score = eval_board()
     if current_score >= beta:
         return beta
     if alpha < current_score:
         alpha = current_score
 
-    for move in board.legal_moves:
-        if board.is_capture(move):
-            board.push(move)
-            board_score = -quiesce(-beta, -alpha, local_quiesce)
-            board.pop()
+    sorted_captures = sort_capture_moves(board.legal_moves)
 
-            if board_score >= beta:
-                return beta
-            if board_score > alpha:
-                alpha = board_score
+    for move in sorted_captures:
+
+        board.push(move)
+        board_score = -quiesce(-beta, -alpha)
+        board.pop()
+
+        if board_score >= beta:
+            return beta
+        if board_score > alpha:
+            alpha = board_score
     return alpha
+
+
+def sort_capture_moves(moves):
+    captures = list()
+    for move in moves:
+        if board.is_capture(move):
+            captures.append(move)
+
+    pawn = list()
+    bN = list()
+    rook = list()
+    queen = list()
+    king = list()
+
+    for c in captures:
+        piece = board.piece_at(c.from_square)
+        if piece.piece_type == 1:
+            pawn.append(c)
+        if piece.piece_type == 2 or piece.piece_type == 3:
+            bN.append(c)
+        if piece.piece_type == 4:
+            rook.append(c)
+        if piece.piece_type == 5:
+            queen.append(c)
+        if piece.piece_type == 6:
+            king.append(c)
+
+    sorted_captures = pawn + bN + rook + queen + king
+    return sorted_captures
 
 
 def select_move(depth):
@@ -311,28 +354,27 @@ def select_move(depth):
         alpha = -100000
         beta = 100000
         moves = board.legal_moves
-
-        for i in range(0, depth + 2):
+        trans_table.clear()
+        for i in range(1, depth):
             start_time = time.time()
             print("\n Searching depth " + str(i))
-            trans_table.clear()
+
             draw_sideboard(surface)
             display_searching(surface)
             for move in moves:
                 draw_sideboard(surface)
                 display_searching(surface)
                 board.push(move)
-                board_value = -min_max_with_pruning(-beta, -alpha, depth - 1)
+                board_value = -min_max_with_pruning(-beta, -alpha, i - 1)
                 if board_value > best_value:
                     best_value = board_value
                     best_move = move
                 if board_value > alpha:
                     alpha = board_value
-                z_hash = chess.polyglot.zobrist_hash(board)
-                trans_table[z_hash] = hash_entry(z_hash, depth, board_value, move, 'exact')
+                # z_hash = chess.polyglot.zobrist_hash(board)
+                # trans_table[z_hash] = hash_entry(z_hash, depth, board_value, move, 'exact')
                 board.pop()
             print("took " + str(time.time() - start_time) + "seconds at depth " + str(i))
-
 
         best_engine_score = - best_value
         move_history.append(best_move.uci())
@@ -417,7 +459,6 @@ def draw_sideboard(surface):
     textRect.center = (9 * tilesize + tilesize / 2, 1.3 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
 
-
     text = font.render("Movelist " + str(move_history), True, white)
     textRect = text.get_rect()
     textRect.center = (9 * tilesize + tilesize / 2, 1.6 * tilesize + tilesize / 2)
@@ -439,6 +480,8 @@ if __name__ == '__main__':
     selected = False
     ps = None
     ds = None
+    depth = 5
+    playerColor = True
 
     while True:
 
@@ -446,7 +489,7 @@ if __name__ == '__main__':
             draw_board(surface)
             pygame.display.update()
 
-            if board.turn:
+            if playerColor:
                 draw_sideboard(surface)
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
@@ -459,19 +502,22 @@ if __name__ == '__main__':
                             ds = select_square()
                             selected = False
                             make_move(ps, ds)
+                            playerColor = not playerColor
 
                 draw_board(surface)
                 pygame.display.update()
+
             else:
                 display_searching(surface)
                 pos_evaluated = 0
                 quiesce_search = 0
                 used_trans_table_lookup = 0
-                mov = select_move(3)
+                mov = select_move(depth)
                 draw_sideboard(surface)
                 board.push(mov)
                 draw_board(surface)
                 pygame.display.update()
+                playerColor = not playerColor
 
         draw_board(surface)
         pygame.display.update()
