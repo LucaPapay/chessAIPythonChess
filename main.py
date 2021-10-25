@@ -105,10 +105,10 @@ images = {'wK': pygame.transform.scale(pygame.image.load("images/wK.png"), (tile
 
 pv = {
     chess.PAWN: 100,
-    chess.ROOK: 500,
+    chess.ROOK: 450,
     chess.KNIGHT: 320,
     chess.BISHOP: 330,
-    chess.QUEEN: 900,
+    chess.QUEEN: 950,
     chess.KING: 20000
 }
 
@@ -239,8 +239,10 @@ def min_max_with_pruning(alpha, beta, depth_left):
         return value
 
     # depth >0 search all legal moves
-    for move in board.legal_moves:
+    sorted_moves = sort_capture_moves(board.legal_moves)
+    for move in sorted_moves:
         board.push(move)
+        board.score = 10
         global remember_move
         remember_move = move
         current_score = -min_max_with_pruning(-beta, -alpha, depth_left - 1)
@@ -300,7 +302,7 @@ def quiesce(alpha, beta, q_depth=8):
     if q_depth == 0:
         return alpha
 
-    sorted_captures = sort_capture_moves(board.legal_moves)
+    sorted_captures = sort_capture_moves(board.legal_moves, False)
 
     for move in sorted_captures:
 
@@ -315,11 +317,8 @@ def quiesce(alpha, beta, q_depth=8):
     return alpha
 
 
-def sort_capture_moves(moves):
-    captures = list()
-    for move in moves:
-        if board.is_capture(move):
-            captures.append(move)
+def sort_capture_moves(moves, min_max=True):
+    rest = list()
 
     big = list()
     med = list()
@@ -327,29 +326,33 @@ def sort_capture_moves(moves):
     negative = list()
     big_negative = list()
 
-    for c in captures:
-        piece_type_start = board.piece_at(c.from_square).piece_type
+    for c in moves:
+        if board.is_capture(c):
 
-        piece_end = board.piece_at(c.to_square)
+            piece_type_start = board.piece_at(c.from_square).piece_type
 
-        # piece_end is none if en passant capture
-        if piece_end is None:
-            piece_type_end = 1
-        else:
-            piece_type_end = piece_end.piece_type
+            piece_end = board.piece_at(c.to_square)
 
-        if piece_type_end - piece_type_start >= 3:
-            big.append(c)
-        elif piece_type_end - piece_type_start >= 1:
-            med.append(c)
-        elif piece_type_end - piece_type_start == 0:
-            zero.append(c)
-        elif piece_type_end - piece_type_start <= -3:
-            big_negative.append(c)
-        else:
-            negative.append(c)
+            # piece_end is none if en passant capture
+            if piece_end is None:
+                piece_type_end = 1
+            else:
+                piece_type_end = piece_end.piece_type
 
-    sorted_captures = big + med + zero + negative + big_negative
+            if piece_type_end - piece_type_start >= 3:
+                big.append(c)
+            elif piece_type_end - piece_type_start >= 1:
+                med.append(c)
+            elif piece_type_end - piece_type_start == 0:
+                zero.append(c)
+            elif piece_type_end - piece_type_start <= -3:
+                big_negative.append(c)
+            else:
+                negative.append(c)
+        elif min_max:
+            rest.append(c)
+
+    sorted_captures = big + med + zero + rest + negative + big_negative
     return sorted_captures
 
 
