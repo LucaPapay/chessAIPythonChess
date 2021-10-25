@@ -4,6 +4,7 @@ import chess
 import chess.svg
 import chess.polyglot
 import pygame
+import random
 
 from time import sleep
 import time
@@ -136,10 +137,12 @@ def draw_board(surface):
         draw_piece(surface, square, piece)
 
 
-def draw_piece(surface, square, piece):
+def draw_piece(surface, square, piece, sidebar=False):
     col = square % 8
     row = square // 8
     #  print(str(row) + str(col) + str(piece.color))
+    if sidebar:
+        col += 8
 
     row = 8 - row - 1
 
@@ -280,7 +283,7 @@ def record_Hash(depth, val, hash_type):
     trans_table[zob] = hash_entry(zob, depth, val, best_move, hash_type)
 
 
-def quiesce(alpha, beta, q_depth = 8):
+def quiesce(alpha, beta, q_depth=8):
     global quiesce_search
     quiesce_search += 1
 
@@ -437,7 +440,26 @@ def make_move(ps, ds):
     ps_col = number_to_text(ps[1])
     ds_row = 8 - ds[0]
     ds_col = number_to_text(ds[1])
-    string = ps_col + str(ps_row) + ds_col + str(ds_row)
+
+    if (ps_row == 7 or ps_row == 1) and ds[1] > 7:
+        if ps_row == 7:
+            next_row = 8
+        else:
+            next_row = 0
+
+        if ds[1] == 8:
+            p = 'q'
+        elif ds[1] == 9:
+            p = 'r'
+        elif ds[1] == 10:
+            p = 'n'
+        else:
+            p = 'b'
+
+        string = ps_col + str(ps_row) + ps_col + str(next_row) + p
+    else:
+        string = ps_col + str(ps_row) + ds_col + str(ds_row)
+
     if ps_col + str(ps_row) != ds_col + str(ds_row):
         move = chess.Move.from_uci(string)
         print(move)
@@ -479,7 +501,17 @@ def draw_sideboard(surface):
     textRect = text.get_rect()
     textRect.center = (9 * tilesize + tilesize / 2, 1.6 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
+
+    promotion(surface)
+
     pygame.display.update()
+
+
+def promotion(surface):
+    draw_piece(surface, 8, chess.Piece(chess.QUEEN, chess.WHITE), True)
+    draw_piece(surface, 9, chess.Piece(chess.ROOK, chess.WHITE), True)
+    draw_piece(surface, 10, chess.Piece(chess.KNIGHT, chess.WHITE), True)
+    draw_piece(surface, 11, chess.Piece(chess.BISHOP, chess.WHITE), True)
 
 
 def display_searching(surface):
@@ -491,6 +523,15 @@ def display_searching(surface):
     pygame.display.update()
 
 
+def make_random_move():
+    ml = list()
+    for m in board.legal_moves:
+        ml.append(m)
+
+    rand = random.randrange(0, len(ml), 1)
+    board.push(ml[rand])
+
+
 if __name__ == '__main__':
 
     selected = False
@@ -498,6 +539,7 @@ if __name__ == '__main__':
     ds = None
     depth = 5
     playerColor = True
+    random_moves = False
 
     while True:
 
@@ -527,9 +569,13 @@ if __name__ == '__main__':
                 pos_evaluated = 0
                 quiesce_search = 0
                 used_trans_table_lookup = 0
-                mov = select_move(depth)
+                if random_moves:
+                    make_random_move()
+                else:
+                    mov = select_move(depth)
+                    board.push(mov)
+
                 draw_sideboard(surface)
-                board.push(mov)
                 draw_board(surface)
                 pygame.display.update()
                 playerColor = not playerColor
