@@ -23,6 +23,8 @@ quiesce_search = 0
 best_engine_score = 0
 used_trans_table_lookup = 0
 
+board_value = 0
+
 pygame.init()
 pygame.font.init()
 
@@ -112,6 +114,10 @@ pv = {
     chess.KING: 20000
 }
 
+piece_values = [100, 320, 330, 450, 950]
+
+tables = [pawn_table, knights_table, bishops_table, rooks_table, queens_table, kings_table]
+
 move_history = []
 
 trans_table = dict()
@@ -178,16 +184,7 @@ def draw_board_background(surface):
             pygame.draw.rect(surface, color, (j * tilesize, i * tilesize, tilesize, tilesize))
 
 
-def eval_board():
-    if board.is_checkmate():
-        if board.turn:
-            return -99999
-        else:
-            return 99999
-
-    if board.is_stalemate() or board.is_insufficient_material():
-        return 0
-
+def eval_board_start():
     pieces = 0
 
     for square in chess.SQUARES:
@@ -212,11 +209,96 @@ def eval_board():
     wKtv = sum(kings_table[i] for i in board.pieces(chess.KING, chess.WHITE))
     bKtv = sum(kings_table[chess.square_mirror(i)] for i in board.pieces(chess.KING, chess.BLACK))
     pieces = pieces + wptv + wRtv + wNtv + wBtv + wQtv + wKtv - (bptv + bRtv + bNtv + bBtv + bQtv + bKtv)
+    global board_value
+    board_value = pieces
 
+    return board_value
+
+
+def eval_board():
+    if board.is_checkmate():
+        if board.turn:
+            return -99999
+        else:
+            return 99999
+
+    if board.is_stalemate() or board.is_insufficient_material():
+        return 0
+
+    evaluation = board_value
     if board.turn:
-        return pieces
+        return evaluation
     else:
-        return -pieces
+        return -evaluation
+
+
+def update_eval(mov, side):
+    global board_value
+
+    moving = board.piece_type_at(mov.from_square)
+    if side:
+        board_value = board_value - tables[moving - 1][mov.from_square]
+        # update castling
+        if (mov.from_square == chess.E1) and (mov.to_square == chess.G1):
+            board_value = board_value - rooks_table[chess.H1]
+            board_value = board_value + rooks_table[chess.F1]
+        elif (mov.from_square == chess.E1) and (mov.to_square == chess.C1):
+            board_value = board_value - rooks_table[chess.A1]
+            board_value = board_value + rooks_table[chess.D1]
+    else:
+        board_value = board_value + tables[moving - 1][mov.from_square]
+        # update castling
+        if (mov.from_square == chess.E8) and (mov.to_square == chess.G8):
+            board_value = board_value + rooks_table[chess.H8]
+            board_value = board_value - rooks_table[chess.F8]
+        elif (mov.from_square == chess.E8) and (mov.to_square == chess.C8):
+            board_value = board_value + rooks_table[chess.A8]
+            board_value = board_value - rooks_table[chess.D8]
+
+    if side:
+        board_value = board_value + tables[moving - 1][mov.to_square]
+    else:
+        board_value = board_value - tables[moving - 1][mov.to_square]
+
+        # update material
+    if board.is_capture(mov):
+        p_type = board.piece_at(mov.to_square)
+        if p_type is not None:
+            p_value = p_type.piece_type
+        else:
+            p_value = 1
+
+        if side:
+            board_value = board_value + piece_values[p_value - 1]
+        else:
+            board_value = board_value - piece_values[p_value - 1]
+
+        # update promotion
+    if mov.promotion is not None:
+        if side:
+            board_value = board_value + piece_values[mov.promotion - 1] - piece_values[moving - 1]
+            board_value = board_value - tables[moving - 1][mov.to_square] \
+                          + tables[mov.promotion - 1][mov.to_square]
+        else:
+            board_value = board_value - piece_values[mov.promotion - 1] + piece_values[moving - 1]
+            board_value = board_value + tables[moving - 1][mov.to_square] \
+                          - tables[mov.promotion - 1][mov.to_square]
+
+    return mov
+
+
+def make_move(mov):
+    update_eval(mov, board.turn)
+    board.push(mov)
+
+    return mov
+
+
+def unmake_move():
+    mov = board.pop()
+    update_eval(mov, not board.turn)
+
+    return mov
 
 
 def min_max_with_pruning(alpha, beta, depth_left):
@@ -235,18 +317,18 @@ def min_max_with_pruning(alpha, beta, depth_left):
     # depth 0 start quiesce
     if depth_left == 0:
         value = quiesce(alpha, beta)
+        # value = eval_board()
         record_Hash(depth_left, value, 'exact')
         return value
 
     # depth >0 search all legal moves
     sorted_moves = sort_capture_moves(board.legal_moves)
     for move in sorted_moves:
-        board.push(move)
-        board.score = 10
+        make_move(move)
         global remember_move
         remember_move = move
         current_score = -min_max_with_pruning(-beta, -alpha, depth_left - 1)
-        board.pop()
+        unmake_move()
 
         if current_score >= beta:
             record_Hash(depth_left, beta, 'beta')
@@ -306,9 +388,9 @@ def quiesce(alpha, beta, q_depth=8):
 
     for move in sorted_captures:
 
-        board.push(move)
+        make_move(move)
         board_score = -quiesce(-beta, -alpha, q_depth - 1)
-        board.pop()
+        unmake_move()
 
         if board_score >= beta:
             return beta
@@ -367,36 +449,41 @@ def select_move(depth):
     except:
 
         global trans_table
-        best_move = chess.Move.null()
+        found_best_move = chess.Move.null()
         best_value = -99999
         alpha = -100000
         beta = 100000
         moves = board.legal_moves
         trans_table.clear()
+        t = "\nBlacks Turn:"
+        if board.turn:
+            t = "\nWhites Turn:"
+        print(t)
         for i in range(1, depth):
             start_time = time.time()
-            print("\n Searching depth " + str(i))
+            print("Searching depth " + str(i))
 
             draw_sideboard(surface)
             display_searching(surface)
             for move in moves:
-                draw_sideboard(surface)
-                display_searching(surface)
-                board.push(move)
-                board_value = -min_max_with_pruning(-beta, -alpha, i - 1)
-                if board_value > best_value:
-                    best_value = board_value
-                    best_move = move
-                if board_value > alpha:
-                    alpha = board_value
+                #draw_sideboard(surface)
+                #display_searching(surface)
+                make_move(move)
+                found_board_value = -min_max_with_pruning(-beta, -alpha, i - 1)
+                if found_board_value > best_value:
+                    best_value = found_board_value
+                    found_best_move = move
+                if found_board_value > alpha:
+                    alpha = found_board_value
                 # z_hash = chess.polyglot.zobrist_hash(board)
                 # trans_table[z_hash] = hash_entry(z_hash, depth, board_value, move, 'exact')
-                board.pop()
+                unmake_move()
             print("took " + str(time.time() - start_time) + "seconds at depth " + str(i))
+            print("Searched " + str(pos_evaluated + quiesce_search) + " nodes\n")
 
         best_engine_score = - best_value
-        move_history.append(best_move.uci())
-        return best_move
+        move_history.append(found_best_move.uci())
+        return found_best_move
 
 
 def sort_moves():
@@ -438,7 +525,7 @@ def number_to_text(rank):
         return "h"
 
 
-def make_move(ps, ds):
+def make_human_move(ps, ds):
     ps_row = 8 - ps[0]
     ps_col = number_to_text(ps[1])
     ds_row = 8 - ds[0]
@@ -467,11 +554,13 @@ def make_move(ps, ds):
         move = chess.Move.from_uci(string)
         print(move)
         if move in board.legal_moves:
-            board.push(move)
+            make_move(move)
             # false = blacks turn
             return False
         else:
             return True
+    else:
+        return True
 
 
 def draw_sideboard(surface):
@@ -495,15 +584,15 @@ def draw_sideboard(surface):
     textRect.center = (9 * tilesize + tilesize / 2, 1 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
 
-    text = font.render("Evaluation " + str(best_engine_score / 100), True, white)
+    text = font.render("Evaluation " + str(board_value / 100), True, white)
     textRect = text.get_rect()
     textRect.center = (9 * tilesize + tilesize / 2, 1.3 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
 
-    text = font.render("Movelist " + str(move_history), True, white)
-    textRect = text.get_rect()
-    textRect.center = (9 * tilesize + tilesize / 2, 1.6 * tilesize + tilesize / 2)
-    surface.blit(text, textRect)
+    # text = font.render("Movelist " + str(move_history), True, white)
+    # textRect = text.get_rect()
+    # textRect.center = (9 * tilesize + tilesize / 2, 1.6 * tilesize + tilesize / 2)
+    # surface.blit(text, textRect)
 
     promotion(surface)
 
@@ -532,17 +621,17 @@ def make_random_move():
         ml.append(m)
 
     rand = random.randrange(0, len(ml), 1)
-    board.push(ml[rand])
+    make_move(ml[rand])
 
 
-if __name__ == '__main__':
-
+def manual_game():
     selected = False
     ps = None
     ds = None
     depth = 5
     playerColor = True
     random_moves = False
+    eval_board_start()
 
     while True:
 
@@ -562,21 +651,24 @@ if __name__ == '__main__':
                         else:
                             ds = select_square()
                             selected = False
-                            playerColor = make_move(ps, ds)
+                            playerColor = make_human_move(ps, ds)
 
                 draw_board(surface)
                 pygame.display.update()
 
             else:
                 display_searching(surface)
+                global pos_evaluated
                 pos_evaluated = 0
+                global quiesce_search
                 quiesce_search = 0
+                global used_trans_table_lookup
                 used_trans_table_lookup = 0
                 if random_moves:
                     make_random_move()
                 else:
                     mov = select_move(depth)
-                    board.push(mov)
+                    make_move(mov)
 
                 draw_sideboard(surface)
                 draw_board(surface)
@@ -585,3 +677,36 @@ if __name__ == '__main__':
 
         draw_board(surface)
         pygame.display.update()
+
+
+def computer_game():
+    depth = 5
+    player_color = True
+    eval_board_start()
+
+    while not board.is_game_over():
+        draw_board(surface)
+        pygame.display.update()
+        display_searching(surface)
+        global pos_evaluated
+        pos_evaluated = 0
+        global quiesce_search
+        quiesce_search = 0
+        global used_trans_table_lookup
+        used_trans_table_lookup = 0
+
+        mov = select_move(depth)
+        make_move(mov)
+
+        draw_sideboard(surface)
+        draw_board(surface)
+        pygame.display.update()
+        player_color = not player_color
+
+    print("GAME ENDED")
+    print("outcome")
+    print(board.outcome().result())
+
+
+if __name__ == '__main__':
+    manual_game()
