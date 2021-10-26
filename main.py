@@ -453,21 +453,22 @@ def select_move(depth):
         best_value = -99999
         alpha = -100000
         beta = 100000
-        moves = board.legal_moves
+        moves = sort_capture_moves(board.legal_moves)
         trans_table.clear()
         t = "\nBlacks Turn:"
         if board.turn:
             t = "\nWhites Turn:"
         print(t)
+        start_time = time.time()
         for i in range(1, depth):
-            start_time = time.time()
+            start_depth = time.time()
             print("Searching depth " + str(i))
 
             draw_sideboard(surface)
             display_searching(surface)
             for move in moves:
-                #draw_sideboard(surface)
-                #display_searching(surface)
+                # draw_sideboard(surface)
+                # display_searching(surface)
                 make_move(move)
                 found_board_value = -min_max_with_pruning(-beta, -alpha, i - 1)
                 if found_board_value > best_value:
@@ -478,9 +479,11 @@ def select_move(depth):
                 # z_hash = chess.polyglot.zobrist_hash(board)
                 # trans_table[z_hash] = hash_entry(z_hash, depth, board_value, move, 'exact')
                 unmake_move()
-            print("took " + str(time.time() - start_time) + "seconds at depth " + str(i))
+            print("took " + str(time.time() - start_depth) + "seconds at depth " + str(i))
             print("Searched " + str(pos_evaluated + quiesce_search) + " nodes\n")
 
+        print(str((pos_evaluated + quiesce_search) / (time.time() - start_time)))
+        print((time.time() - start_time))
         best_engine_score = - best_value
         move_history.append(found_best_move.uci())
         return found_best_move
@@ -584,9 +587,14 @@ def draw_sideboard(surface):
     textRect.center = (9 * tilesize + tilesize / 2, 1 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
 
-    text = font.render("Evaluation " + str(board_value / 100), True, white)
+    text = font.render("Hashtable Size  " + str(len(trans_table)), True, white)
     textRect = text.get_rect()
     textRect.center = (9 * tilesize + tilesize / 2, 1.3 * tilesize + tilesize / 2)
+    surface.blit(text, textRect)
+
+    text = font.render("Evaluation " + str(board_value / 100), True, white)
+    textRect = text.get_rect()
+    textRect.center = (9 * tilesize + tilesize / 2, 1.6 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
 
     # text = font.render("Movelist " + str(move_history), True, white)
@@ -679,10 +687,15 @@ def manual_game():
         pygame.display.update()
 
 
-def computer_game():
+def computer_game(starting_string=False):
+    global board
     depth = 5
     player_color = True
-    eval_board_start()
+
+    if starting_string:
+        board = chess.Board("1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5 b - - 0 1")
+    global board_value
+    board_value = eval_board_start()
 
     while not board.is_game_over():
         draw_board(surface)
@@ -709,4 +722,4 @@ def computer_game():
 
 
 if __name__ == '__main__':
-    manual_game()
+    computer_game()
