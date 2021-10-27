@@ -3,7 +3,7 @@ import operator
 import chess
 import chess.svg
 import chess.polyglot
-import pygame
+
 import random
 
 from time import sleep
@@ -25,12 +25,12 @@ used_trans_table_lookup = 0
 
 board_value = 0
 
-pygame.init()
-pygame.font.init()
+# pygame.init()
+# pygame.font.init()
 
-surface = pygame.display.set_mode((12 * tilesize, 8 * tilesize))
-font = pygame.font.Font(pygame.font.get_default_font(), 20)
-pygame.display.set_caption("Luca's Chess Ai")
+# surface = pygame.display.set_mode((12 * tilesize, 8 * tilesize))
+# font = pygame.font.Font(pygame.font.get_default_font(), 20)
+# pygame.display.set_caption("Luca's Chess Ai")
 
 pawn_table = [
     0, 0, 0, 0, 0, 0, 0, 0,
@@ -92,18 +92,18 @@ kings_table = [
     -30, -40, -40, -50, -50, -40, -40, -30,
     -30, -40, -40, -50, -50, -40, -40, -30]
 
-images = {'wK': pygame.transform.scale(pygame.image.load("images/wK.png"), (tilesize, tilesize)),
-          'wQ': pygame.transform.scale(pygame.image.load("images/wQ.png"), (tilesize, tilesize)),
-          'wp': pygame.transform.scale(pygame.image.load("images/wp.png"), (tilesize, tilesize)),
-          'wR': pygame.transform.scale(pygame.image.load("images/wR.png"), (tilesize, tilesize)),
-          'wN': pygame.transform.scale(pygame.image.load("images/wN.png"), (tilesize, tilesize)),
-          'wB': pygame.transform.scale(pygame.image.load("images/wB.png"), (tilesize, tilesize)),
-          'bK': pygame.transform.scale(pygame.image.load("images/bK.png"), (tilesize, tilesize)),
-          'bQ': pygame.transform.scale(pygame.image.load("images/bQ.png"), (tilesize, tilesize)),
-          'bp': pygame.transform.scale(pygame.image.load("images/bp.png"), (tilesize, tilesize)),
-          'bR': pygame.transform.scale(pygame.image.load("images/bR.png"), (tilesize, tilesize)),
-          'bN': pygame.transform.scale(pygame.image.load("images/bN.png"), (tilesize, tilesize)),
-          'bB': pygame.transform.scale(pygame.image.load("images/bB.png"), (tilesize, tilesize))}
+# images = {'wK': pygame.transform.scale(pygame.image.load("images/wK.png"), (tilesize, tilesize)),
+#          'wQ': pygame.transform.scale(pygame.image.load("images/wQ.png"), (tilesize, tilesize)),
+ #         'wp': pygame.transform.scale(pygame.image.load("images/wp.png"), (tilesize, tilesize)),
+  #        'wR': pygame.transform.scale(pygame.image.load("images/wR.png"), (tilesize, tilesize)),
+   #       'wN': pygame.transform.scale(pygame.image.load("images/wN.png"), (tilesize, tilesize)),
+    #      'wB': pygame.transform.scale(pygame.image.load("images/wB.png"), (tilesize, tilesize)),
+     #     'bK': pygame.transform.scale(pygame.image.load("images/bK.png"), (tilesize, tilesize)),
+      #    'bQ': pygame.transform.scale(pygame.image.load("images/bQ.png"), (tilesize, tilesize)),
+       #   'bp': pygame.transform.scale(pygame.image.load("images/bp.png"), (tilesize, tilesize)),
+        #  'bR': pygame.transform.scale(pygame.image.load("images/bR.png"), (tilesize, tilesize)),
+         # 'bN': pygame.transform.scale(pygame.image.load("images/bN.png"), (tilesize, tilesize)),
+          #'bB': pygame.transform.scale(pygame.image.load("images/bB.png"), (tilesize, tilesize))}
 
 pv = {
     chess.PAWN: 100,
@@ -464,8 +464,8 @@ def select_move(depth):
             start_depth = time.time()
             print("Searching depth " + str(i))
 
-            draw_sideboard(surface)
-            display_searching(surface)
+#            draw_sideboard(surface)
+ #           display_searching(surface)
             for move in moves:
                 # draw_sideboard(surface)
                 # display_searching(surface)
@@ -697,10 +697,11 @@ def computer_game(starting_string=False):
     global board_value
     board_value = eval_board_start()
 
-    while not board.is_game_over():
-        draw_board(surface)
-        pygame.display.update()
-        display_searching(surface)
+    while not board.is_game_over(claim_draw=True):
+#        draw_board(surface)
+ #       pygame.display.update()
+  #      display_searching(surface)
+        print(board.fullmove_number)
         global pos_evaluated
         pos_evaluated = 0
         global quiesce_search
@@ -711,9 +712,9 @@ def computer_game(starting_string=False):
         mov = select_move(depth)
         make_move(mov)
 
-        draw_sideboard(surface)
-        draw_board(surface)
-        pygame.display.update()
+       # draw_sideboard(surface)
+       # draw_board(surface)
+       # pygame.display.update()
         player_color = not player_color
 
     print("GAME ENDED")
@@ -722,4 +723,4 @@ def computer_game(starting_string=False):
 
 
 if __name__ == '__main__':
-    computer_game()
+    computer_game(True)
