@@ -5,9 +5,12 @@ import chess.svg
 import chess.polyglot
 import pygame
 import random
+from numba import *
 
 from time import sleep
 import time
+
+from numba.experimental import jitclass
 
 board = chess.Board()
 
@@ -17,11 +20,26 @@ white = (238, 238, 213)
 black = (125, 148, 93)
 true_black = (0, 0, 0)
 
+spec = [
+    ('pos_evaluated', int32),  # a simple scalar field
+    ('quiesce_search', int32),
+    ('best_engine_score', int32),
+    ('used_trans_table_lookup', int32),
+]
+
+
+@jitclass(spec)
+class stats:
+    def __init__(self):
+        self.pos_evaluated = 0
+        self.quiesce_search = 0
+        self.best_engine_score = 0
+        self.used_trans_table_lookup = 0
+
+
+stats = stats()
+
 score = 0
-pos_evaluated = 0
-quiesce_search = 0
-best_engine_score = 0
-used_trans_table_lookup = 0
 
 board_value = 0
 
@@ -301,18 +319,17 @@ def unmake_move():
     return mov
 
 
+@jit(nopython=True)
 def min_max_with_pruning(alpha, beta, depth_left):
     type = 'alpha'
     temp = probe_hash(depth_left, alpha, beta)
 
     # Hashtable check
     if temp != 'unknown':
-        global used_trans_table_lookup
-        used_trans_table_lookup += 1
+        stats.used_trans_table_lookup += 1
         return temp
-    global pos_evaluated
 
-    pos_evaluated += 1
+    stats.pos_evaluated += 1
 
     # depth 0 start quiesce
     if depth_left == 0:
@@ -322,11 +339,12 @@ def min_max_with_pruning(alpha, beta, depth_left):
         return value
 
     # depth >0 search all legal moves
-    sorted_moves = sort_capture_moves(board.legal_moves)
+    #sorted_moves = sort_capture_moves(board.legal_moves)
+    sorted_moves = board.legal_moves
     for move in sorted_moves:
         make_move(move)
-        global remember_move
-        remember_move = move
+        # global remember_move
+        # remember_move = move
         current_score = -min_max_with_pruning(-beta, -alpha, depth_left - 1)
         unmake_move()
 
@@ -342,6 +360,7 @@ def min_max_with_pruning(alpha, beta, depth_left):
     return alpha
 
 
+@jit(nopython=True)
 def probe_hash(depth, alpha, beta):
     # return 'unknown'
     zob = chess.polyglot.zobrist_hash(board)
@@ -360,16 +379,16 @@ def probe_hash(depth, alpha, beta):
 
     return 'unknown'
 
-
+@jit(nopython=True)
 def record_Hash(depth, val, hash_type):
     zob = chess.polyglot.zobrist_hash(board)
-    global best_move
-    trans_table[zob] = hash_entry(zob, depth, val, best_move, hash_type)
+    #global best_move
+    trans_table[zob] = hash_entry(zob, depth, val, None, hash_type)
 
 
+@jit(nopython=True)
 def quiesce(alpha, beta, q_depth=8):
-    global quiesce_search
-    quiesce_search += 1
+    stats.quiesce_search += 1
 
     # dont check more captures if you are in check
     # if board.is_check():
@@ -398,7 +417,7 @@ def quiesce(alpha, beta, q_depth=8):
             alpha = board_score
     return alpha
 
-
+@jit(nopython=True)
 def sort_capture_moves(moves, min_max=True):
     rest = list()
 
@@ -453,7 +472,8 @@ def select_move(depth):
         best_value = -99999
         alpha = -100000
         beta = 100000
-        moves = sort_capture_moves(board.legal_moves)
+        #moves = sort_capture_moves(board.legal_moves)
+        moves = board.legal_moves
         trans_table.clear()
         t = "\nBlacks Turn:"
         if board.turn:
@@ -568,21 +588,21 @@ def make_human_move(ps, ds):
 
 def draw_sideboard(surface):
     pygame.draw.rect(surface, true_black, (8 * tilesize, 0 * tilesize, tilesize * 4, tilesize * 8))
-    text = font.render("Positions Evaluated " + str(pos_evaluated), True, white)
+    text = font.render("Positions Evaluated " + str(stats.pos_evaluated), True, white)
     textRect = text.get_rect()
     textRect.center = (9 * tilesize + tilesize / 2, 0.1 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
-    text = font.render("Quiesce Evaluated " + str(quiesce_search), True, white)
+    text = font.render("Quiesce Evaluated " + str(stats.quiesce_search), True, white)
     textRect = text.get_rect()
     textRect.center = (9 * tilesize + tilesize / 2, 0.4 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
 
-    text = font.render("Total Evaluated " + str(pos_evaluated + quiesce_search), True, white)
+    text = font.render("Total Evaluated " + str(stats.pos_evaluated + stats.quiesce_search), True, white)
     textRect = text.get_rect()
     textRect.center = (9 * tilesize + tilesize / 2, 0.7 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
 
-    text = font.render("Hashtable lookups " + str(used_trans_table_lookup), True, white)
+    text = font.render("Hashtable lookups " + str(stats.used_trans_table_lookup), True, white)
     textRect = text.get_rect()
     textRect.center = (9 * tilesize + tilesize / 2, 1 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
@@ -722,4 +742,4 @@ def computer_game(starting_string=False):
 
 
 if __name__ == '__main__':
-    computer_game()
+    computer_game(True)
