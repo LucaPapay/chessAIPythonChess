@@ -5,6 +5,7 @@ import chess.svg
 import chess.polyglot
 import pygame
 import random
+import chess.engine
 
 from time import sleep
 import time
@@ -687,6 +688,50 @@ def manual_game():
         pygame.display.update()
 
 
+def stockfish_game(starting_string=False):
+    global board
+    depth = 4
+    player_color = True
+
+    engine = chess.engine.SimpleEngine.popen_uci(
+        "C:/Users/Luca/PycharmProjects/chessaipythonchess/engines/stockfish_14_x64_avx2.exe")
+
+    if starting_string:
+        board = chess.Board("1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5 b - - 0 1")
+    global board_value
+    board_value = eval_board_start()
+
+    while not board.is_game_over(claim_draw=True):
+        draw_board(surface)
+        pygame.display.update()
+        display_searching(surface)
+        global pos_evaluated
+        pos_evaluated = 0
+        global quiesce_search
+        quiesce_search = 0
+        global used_trans_table_lookup
+        used_trans_table_lookup = 0
+
+        if board.turn:
+            mov = select_move(depth)
+            print(mov)
+            make_move(mov)
+        else:
+            engine_move = engine.play(board, chess.engine.Limit(0.001))
+            print(engine_move.move)
+            make_move(engine_move.move)
+
+        draw_sideboard(surface)
+        draw_board(surface)
+        pygame.display.update()
+        player_color = not player_color
+
+    print(board.fullmove_number)
+    print("GAME ENDED")
+    print("outcome")
+    print(board.outcome().result())
+
+
 def computer_game(starting_string=False):
     global board
     depth = 5
@@ -697,7 +742,7 @@ def computer_game(starting_string=False):
     global board_value
     board_value = eval_board_start()
 
-    while not board.is_game_over():
+    while not board.is_game_over(claim_draw=True):
         draw_board(surface)
         pygame.display.update()
         display_searching(surface)
@@ -722,4 +767,4 @@ def computer_game(starting_string=False):
 
 
 if __name__ == '__main__':
-    computer_game()
+    stockfish_game()
