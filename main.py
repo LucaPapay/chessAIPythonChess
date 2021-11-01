@@ -633,12 +633,12 @@ def make_random_move():
     make_move(ml[rand])
 
 
-def manual_game():
+def manual_game(player = True):
     selected = False
     ps = None
     ds = None
     depth = 5
-    playerColor = True
+    playerColor = player
     random_moves = False
     eval_board_start()
 
@@ -767,4 +767,4 @@ def computer_game(starting_string=False):
 
 
 if __name__ == '__main__':
-    stockfish_game()
+    manual_game(True)
