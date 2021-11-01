@@ -6,7 +6,6 @@ import chess.polyglot
 import pygame
 import random
 import chess.engine
-import numpy as np
 
 from time import sleep
 import time
@@ -119,9 +118,9 @@ images = {'wK': pygame.transform.scale(pygame.image.load("images/wK.png"), (tile
 
 pv = {
     chess.PAWN: 100,
-    chess.ROOK: 450,
     chess.KNIGHT: 320,
     chess.BISHOP: 330,
+    chess.ROOK: 450,
     chess.QUEEN: 950,
     chess.KING: 20000
 }
@@ -233,7 +232,7 @@ def eval_board_start():
     return board_value
 
 
-def eval_board():
+def eval_board_increment():
     if board.is_checkmate():
         if board.turn:
             return -99999
@@ -255,6 +254,8 @@ def update_eval(mov, side):
     global board_value
     s = time.time()
     moving = board.piece_type_at(mov.from_square)
+
+    # piece square tables
     if side:
         board_value = board_value - tables[moving - 1][mov.from_square]
         # update castling
@@ -279,7 +280,7 @@ def update_eval(mov, side):
     else:
         board_value = board_value - tables[moving - 1][mov.to_square]
 
-        # update material
+    # capturing
     if board.is_capture(mov):
         p_type = board.piece_at(mov.to_square)
         if p_type is not None:
@@ -307,8 +308,49 @@ def update_eval(mov, side):
     return mov
 
 
+def eval_board():
+    if board.is_checkmate():
+        if board.turn:
+            return -99999
+        else:
+            return 99999
+
+    if board.is_stalemate() or board.is_insufficient_material():
+        return 0
+
+    pieces = 0
+
+    for square in chess.SQUARES:
+        piece = board.piece_at(square)
+        if not piece:
+            continue
+        if piece.color == chess.WHITE:
+            pieces += pv[piece.piece_type]
+        else:
+            pieces -= pv[piece.piece_type]
+
+    wptv = sum(pawn_table[i] for i in board.pieces(chess.PAWN, chess.WHITE))
+    bptv = sum(pawn_table[chess.square_mirror(i)] for i in board.pieces(chess.PAWN, chess.BLACK))
+    wRtv = sum(rooks_table[i] for i in board.pieces(chess.ROOK, chess.WHITE))
+    bRtv = sum(rooks_table[chess.square_mirror(i)] for i in board.pieces(chess.ROOK, chess.BLACK))
+    wNtv = sum(knights_table[i] for i in board.pieces(chess.KNIGHT, chess.WHITE))
+    bNtv = sum(knights_table[chess.square_mirror(i)] for i in board.pieces(chess.KNIGHT, chess.BLACK))
+    wBtv = sum(bishops_table[i] for i in board.pieces(chess.BISHOP, chess.WHITE))
+    bBtv = sum(bishops_table[chess.square_mirror(i)] for i in board.pieces(chess.BISHOP, chess.BLACK))
+    wQtv = sum(queens_table[i] for i in board.pieces(chess.QUEEN, chess.WHITE))
+    bQtv = sum(queens_table[chess.square_mirror(i)] for i in board.pieces(chess.QUEEN, chess.BLACK))
+    wKtv = sum(kings_table[i] for i in board.pieces(chess.KING, chess.WHITE))
+    bKtv = sum(kings_table[chess.square_mirror(i)] for i in board.pieces(chess.KING, chess.BLACK))
+    pieces = pieces + wptv + wRtv + wNtv + wBtv + wQtv + wKtv - (bptv + bRtv + bNtv + bBtv + bQtv + bKtv)
+
+    if board.turn:
+        return pieces
+    else:
+        return -pieces
+
+
 def make_move(mov):
-    update_eval(mov, board.turn)
+    # update_eval(mov, board.turn)
     board.push(mov)
 
     return mov
@@ -316,7 +358,7 @@ def make_move(mov):
 
 def unmake_move():
     mov = board.pop()
-    update_eval(mov, not board.turn)
+    # update_eval(mov, not board.turn)
 
     return mov
 
@@ -373,9 +415,9 @@ def min_max_with_pruning(alpha, beta, depth_left, null_move):
 
 def make_null_move(beta, depth_left):
     # null move pruning todo not sure if working correctly
-    if not board.is_check() and should_null_move and depth_left >= 3 and should_null_move:
+    if not board.is_check() and should_null_move and depth_left >= 3:
         board.turn = not board.turn
-        reduce_depth = 3
+        reduce_depth = 2
         test = -min_max_with_pruning(-beta, -beta, depth_left - 1 - reduce_depth, False)
         board.turn = not board.turn
         if test >= beta:
@@ -407,7 +449,7 @@ def record_Hash(depth, val, hash_type):
     trans_table[zob] = hash_entry(zob, depth, val, best_move, hash_type)
 
 
-def quiesce(alpha, beta, q_depth=8):
+def quiesce(alpha, beta, q_depth=100):
     global quiesce_search
     quiesce_search += 1
 
@@ -454,7 +496,7 @@ def sort_capture_moves(moves, min_max=True):
     global make_lists
     global check_and_append
     global loop
-    l = time.time()
+    la = time.time()
     rest = list()
 
     big = list()
@@ -462,7 +504,7 @@ def sort_capture_moves(moves, min_max=True):
     zero = list()
     negative = list()
     big_negative = list()
-    make_lists += time.time() - l
+    make_lists += time.time() - la
 
     x = time.time()
     for c in moves:
@@ -512,6 +554,10 @@ def sort_capture_moves(moves, min_max=True):
     return sorted_captures
 
 
+best_moves = list()
+best_moves_eval = list()
+
+
 def select_move(depth):
     try:
         move = chess.polyglot.MemoryMappedReader("bookfish.bin").weighted_choice(board).move
@@ -521,7 +567,9 @@ def select_move(depth):
         best_engine_score = - eval_board()
         return move
     except:
-        global trans_table
+        global trans_table, best_moves, best_moves_eval
+        best_moves = list()
+        best_moves_eval = list()
         found_best_move = chess.Move.null()
         best_value = -99999
         alpha = -100000
@@ -535,13 +583,15 @@ def select_move(depth):
         start_time = time.time()
         for i in range(1, depth):
             start_depth = time.time()
-            print("Searching depth " + str(i))
+            should_print_time_check = time.time() - start_time > time_limit
+            if not should_print_time_check:
+                print("Searching depth " + str(i))
 
             draw_sideboard(surface)
             display_searching(surface)
             for move in moves:
-                if time.time() - start_time > time_limit and False:
-                    print("\n \n TIME LIMIT REACHED \n \n")
+                if time.time() - start_time > time_limit:
+                    # print("\n \n TIME LIMIT REACHED \n \n")
                     break
                 # draw_sideboard(surface)
                 # display_searching(surface)
@@ -558,9 +608,12 @@ def select_move(depth):
                 # z_hash = chess.polyglot.zobrist_hash(board)
                 # trans_table[z_hash] = hash_entry(z_hash, depth, board_value, move, 'exact')
                 unmake_move()
-            print("took " + str(time.time() - start_depth) + "seconds at depth " + str(i))
-            print("Searched " + str(pos_evaluated + quiesce_search) + " nodes\n")
-
+            if not should_print_time_check:
+                print("took " + str(time.time() - start_depth) + "seconds at depth " + str(i) + " found " + str(
+                    found_best_move.uci()))
+                print("Searched " + str(pos_evaluated + quiesce_search) + " nodes\n")
+                best_moves.append(found_best_move.uci())
+                best_moves_eval.append(best_value)
         print(str((pos_evaluated + quiesce_search) / (time.time() - start_time)))
         print((time.time() - start_time))
         best_engine_score = - best_value
@@ -886,15 +939,19 @@ def test_engine():
     global board, board_value, should_null_move, time_limit, should_use_hash_table, quiesce_search, pos_evaluated, \
         used_trans_table_lookup
 
-    depth = 10
+    depth = 30
     solved = 0
     stockfish = False
-    should_null_move = False
+    should_null_move = True
     should_use_hash_table = True
-    time_limit = 20
+    time_limit = 10
 
-    engine = chess.engine.SimpleEngine.popen_uci(
-        "C:/Users/Luca/PycharmProjects/chessaipythonchess/engines/stockfish_14_x64_avx2.exe")
+    null_hash_right = list()
+    hash_right = list()
+    none_right = list()
+
+    # engine = chess.engine.SimpleEngine.popen_uci(
+    # "C:/Users/Luca/PycharmProjects/chessaipythonchess/engines/stockfish_14_x64_avx2.exe")
 
     for i in range(24):
         movehistory = []
@@ -913,15 +970,84 @@ def test_engine():
 
         else:
             mov = select_move(depth)
-        print("Move problem " + str(i + 1) + " " + board.san(mov) + " / Solution: " + solutions[i])
+        print("Move problem " + str(i + 1) + " " + board.san(mov) + " / Solution: " + solutions[
+            i] + " uci move " + mov.uci())
+        print(best_moves)
+        print(best_moves_eval)
 
         if str(board.san(mov)) in str(solutions[i]):
             solved = solved + 1
             print("OK")
+            null_hash_right.append(True)
         else:
             print("wrong")
+            null_hash_right.append(False)
 
     print("Number of correct solved: " + str(solved))
+
+    solved = 0
+    should_null_move = False
+
+    for i in range(24):
+        movehistory = []
+        board = chess.Board(positions[i])
+        board_value = eval_board_start()
+
+        quiesce_search = 0
+        pos_evaluated = 0
+        used_trans_table_lookup = 0
+        draw_board(surface)
+        pygame.display.update()
+
+        mov = select_move(depth)
+        print("Move problem " + str(i + 1) + " " + board.san(mov) + " / Solution: " + solutions[
+            i] + " uci move " + mov.uci())
+        print(best_moves)
+        print(best_moves_eval)
+
+        if str(board.san(mov)) in str(solutions[i]):
+            solved = solved + 1
+            print("OK")
+            hash_right.append(True)
+        else:
+            print("wrong")
+            hash_right.append(False)
+
+    print("Number of correct solved: " + str(solved))
+
+    solved = 0
+    should_use_hash_table = False
+
+    for i in range(24):
+        movehistory = []
+        board = chess.Board(positions[i])
+        board_value = eval_board_start()
+
+        quiesce_search = 0
+        pos_evaluated = 0
+        used_trans_table_lookup = 0
+        draw_board(surface)
+        pygame.display.update()
+
+        mov = select_move(depth)
+        print("Move problem " + str(i + 1) + " " + board.san(mov) + " / Solution: " + solutions[
+            i] + " uci move " + mov.uci())
+        print(best_moves)
+        print(best_moves_eval)
+
+        if str(board.san(mov)) in str(solutions[i]):
+            solved = solved + 1
+            print("OK")
+            none_right.append(True)
+        else:
+            print("wrong")
+            none_right.append(False)
+
+    print("Number of correct solved: " + str(solved))
+
+    print(null_hash_right)
+    print(hash_right)
+    print(none_right)
 
 
 def print_stats():
@@ -958,4 +1084,4 @@ def print_stats():
 
 
 if __name__ == '__main__':
-    manual_game()
+    test_engine()
