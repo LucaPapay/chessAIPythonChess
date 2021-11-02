@@ -4,7 +4,6 @@ import chess.polyglot
 import pygame
 import random
 import chess.engine
-from numba import jit
 
 import time
 
@@ -363,7 +362,6 @@ def unmake_move():
 
     return mov
 
-@jit
 def min_max_with_pruning(alpha, beta, depth_left, null_move):
     hash_type = 'alpha'
     temp = probe_hash(depth_left, alpha, beta)
@@ -494,20 +492,8 @@ def quiesce(alpha, beta, q_depth=100):
     return alpha
 
 
-t_get_piece = 0
-t_capture_check = 0
-make_lists = 0
-check_and_append = 0
-loop = 0
-
 
 def sort_capture_moves(moves, min_max=True):
-    global t_get_piece
-    global t_capture_check
-    global make_lists
-    global check_and_append
-    global loop
-    la = time.time()
     rest = list()
 
     big = list()
@@ -515,16 +501,16 @@ def sort_capture_moves(moves, min_max=True):
     zero = list()
     negative = list()
     big_negative = list()
-    make_lists += time.time() - la
 
-    x = time.time()
+
+
     for c in moves:
-        loop += time.time() - x
+
         x = time.time()
         a = board.is_capture(c)
-        t_capture_check += time.time() - x
+
         if a:
-            s = time.time()
+
             if True:
                 if board.is_en_passant(c):
                     piece_type_end = 1
@@ -540,9 +526,8 @@ def sort_capture_moves(moves, min_max=True):
                     piece_type_end = piece_end.piece_type
 
             piece_type_start = board.piece_at(c.from_square).piece_type
-            t_get_piece += time.time() - s
 
-            c_t = time.time()
+
             if piece_type_end - piece_type_start >= 3:
                 big.append(c)
             elif piece_type_end - piece_type_start >= 1:
@@ -553,14 +538,13 @@ def sort_capture_moves(moves, min_max=True):
                 big_negative.append(c)
             else:
                 negative.append(c)
-            check_and_append += time.time() - c_t
+
 
         elif min_max:
-            c_t = time.time()
-            rest.append(c)
-            check_and_append += time.time() - c_t
 
-        x = time.time()
+            rest.append(c)
+
+
     sorted_captures = big + med + zero + rest + negative + big_negative
     return sorted_captures
 
