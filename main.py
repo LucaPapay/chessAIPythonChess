@@ -1,13 +1,11 @@
-import operator
-
 import chess
 import chess.svg
 import chess.polyglot
 import pygame
 import random
 import chess.engine
+from numba import jit
 
-from time import sleep
 import time
 
 board = chess.Board()
@@ -23,6 +21,7 @@ pos_evaluated = 0
 quiesce_search = 0
 best_engine_score = 0
 used_trans_table_lookup = 0
+searched_null_moves = 0
 
 min_max_time = 0
 quisce_time = 0
@@ -120,12 +119,11 @@ pv = {
     chess.PAWN: 100,
     chess.KNIGHT: 320,
     chess.BISHOP: 330,
-    chess.ROOK: 450,
-    chess.QUEEN: 950,
-    chess.KING: 20000
+    chess.ROOK: 500,
+    chess.QUEEN: 900
 }
 
-piece_values = [100, 320, 330, 450, 950]
+piece_values = [100, 320, 330, 500, 900]
 
 tables = [pawn_table, knights_table, bishops_table, rooks_table, queens_table, kings_table]
 
@@ -137,10 +135,10 @@ best_move = None
 
 
 class hash_entry:
-    def __init__(self, zobrist, depth, score, move, flag):
+    def __init__(self, zobrist, depth, pos_score, move, flag):
         self.zobrist = zobrist
         self.depth = depth
-        self.score = score
+        self.score = pos_score
         self.move = move
         self.flag = flag
 
@@ -201,16 +199,19 @@ def draw_board_background(surface):
 def eval_board_start():
     global eval_time
     s = time.time()
-    pieces = 0
 
-    for square in chess.SQUARES:
-        piece = board.piece_at(square)
-        if not piece:
-            continue
-        if piece.color == chess.WHITE:
-            pieces += pv[piece.piece_type]
-        else:
-            pieces -= pv[piece.piece_type]
+    wp = len(board.pieces(chess.PAWN, chess.WHITE))
+    bp = len(board.pieces(chess.PAWN, chess.BLACK))
+    wn = len(board.pieces(chess.KNIGHT, chess.WHITE))
+    bn = len(board.pieces(chess.KNIGHT, chess.BLACK))
+    wb = len(board.pieces(chess.BISHOP, chess.WHITE))
+    bb = len(board.pieces(chess.BISHOP, chess.BLACK))
+    wr = len(board.pieces(chess.ROOK, chess.WHITE))
+    br = len(board.pieces(chess.ROOK, chess.BLACK))
+    wq = len(board.pieces(chess.QUEEN, chess.WHITE))
+    bq = len(board.pieces(chess.QUEEN, chess.BLACK))
+
+    material = 100 * (wp - bp) + 320 * (wn - bn) + 330 * (wb - bb) + 500 * (wr - br) + 900 * (wq - bq)
 
     wptv = sum(pawn_table[i] for i in board.pieces(chess.PAWN, chess.WHITE))
     bptv = sum(pawn_table[chess.square_mirror(i)] for i in board.pieces(chess.PAWN, chess.BLACK))
@@ -224,7 +225,7 @@ def eval_board_start():
     bQtv = sum(queens_table[chess.square_mirror(i)] for i in board.pieces(chess.QUEEN, chess.BLACK))
     wKtv = sum(kings_table[i] for i in board.pieces(chess.KING, chess.WHITE))
     bKtv = sum(kings_table[chess.square_mirror(i)] for i in board.pieces(chess.KING, chess.BLACK))
-    pieces = pieces + wptv + wRtv + wNtv + wBtv + wQtv + wKtv - (bptv + bRtv + bNtv + bBtv + bQtv + bKtv)
+    pieces = material + wptv + wRtv + wNtv + wBtv + wQtv + wKtv - (bptv + bRtv + bNtv + bBtv + bQtv + bKtv)
     global board_value
     board_value = pieces
 
@@ -232,7 +233,7 @@ def eval_board_start():
     return board_value
 
 
-def eval_board_increment():
+def eval_board():
     if board.is_checkmate():
         if board.turn:
             return -99999
@@ -308,7 +309,7 @@ def update_eval(mov, side):
     return mov
 
 
-def eval_board():
+def eval_board_old():
     if board.is_checkmate():
         if board.turn:
             return -99999
@@ -350,7 +351,7 @@ def eval_board():
 
 
 def make_move(mov):
-    # update_eval(mov, board.turn)
+    update_eval(mov, board.turn)
     board.push(mov)
 
     return mov
@@ -358,13 +359,13 @@ def make_move(mov):
 
 def unmake_move():
     mov = board.pop()
-    # update_eval(mov, not board.turn)
+    update_eval(mov, not board.turn)
 
     return mov
 
-
+@jit
 def min_max_with_pruning(alpha, beta, depth_left, null_move):
-    type = 'alpha'
+    hash_type = 'alpha'
     temp = probe_hash(depth_left, alpha, beta)
 
     # Hashtable check
@@ -375,6 +376,10 @@ def min_max_with_pruning(alpha, beta, depth_left, null_move):
     global pos_evaluated
 
     pos_evaluated += 1
+
+    #search for way out of check before quisce
+    if board.is_check():
+        depth_left += 1
 
     # depth 0 start quiesce
     if depth_left <= 0:
@@ -387,7 +392,8 @@ def min_max_with_pruning(alpha, beta, depth_left, null_move):
         record_Hash(depth_left, value, 'exact')
         return value
 
-    make_null_move(beta, depth_left)
+    if null_move:
+        make_null_move(beta, depth_left)
 
     # depth >0 search all legal moves
     y = time.time()
@@ -398,27 +404,32 @@ def min_max_with_pruning(alpha, beta, depth_left, null_move):
         make_move(move)
         global remember_move
         remember_move = move
-        current_score = -min_max_with_pruning(-beta, -alpha, depth_left - 1, not null_move)
+        current_score = -min_max_with_pruning(-beta, -alpha, depth_left - 1, True)
         unmake_move()
 
+        # move is so great for opponent we dont need to search deeper
         if current_score >= beta:
             record_Hash(depth_left, beta, 'beta')
             return beta
 
+        # better move for us found
         if current_score > alpha:
+            # todo principal variation
             alpha = current_score
-            type = 'exact'
+            hash_type = 'exact'
 
-    record_Hash(depth_left, alpha, type)
+    record_Hash(depth_left, alpha, hash_type)
     return alpha
 
 
 def make_null_move(beta, depth_left):
     # null move pruning todo not sure if working correctly
-    if not board.is_check() and should_null_move and depth_left >= 3:
+    if (not board.is_check()) and should_null_move and depth_left >= 3:
+        global searched_null_moves
+        searched_null_moves += 1
         board.turn = not board.turn
         reduce_depth = 2
-        test = -min_max_with_pruning(-beta, -beta, depth_left - 1 - reduce_depth, False)
+        test = -min_max_with_pruning(-beta, -beta + 1, depth_left - 1 - reduce_depth, False)
         board.turn = not board.turn
         if test >= beta:
             return test
@@ -576,9 +587,9 @@ def select_move(depth):
         beta = 100000
         moves = sort_capture_moves(board.legal_moves)
         trans_table.clear()
-        t = "\nBlacks Turn: " + str(should_null_move)
+        t = "\nBlacks Turn: "
         if board.turn:
-            t = "\nWhites Turn: " + str(should_null_move)
+            t = "\nWhites Turn: "
         print(t)
         start_time = time.time()
         for i in range(1, depth):
@@ -593,7 +604,7 @@ def select_move(depth):
                 if time.time() - start_time > time_limit:
                     # print("\n \n TIME LIMIT REACHED \n \n")
                     break
-                # draw_sideboard(surface)
+                draw_sideboard(surface)
                 # display_searching(surface)
                 make_move(move)
                 s = time.time()
@@ -619,19 +630,6 @@ def select_move(depth):
         best_engine_score = - best_value
         move_history.append(found_best_move.uci())
         return found_best_move
-
-
-def sort_moves():
-    global trans_table
-    move_list = list()
-    for key in trans_table.keys():
-        move_list.append((trans_table[key].move, trans_table[key].score))
-    move_list.sort(key=lambda x: x[1], reverse=True)
-
-    final_move = list()
-    for m in move_list:
-        final_move.append(m[0])
-    return final_move
 
 
 def select_square():
@@ -726,9 +724,14 @@ def draw_sideboard(surface):
     textRect.center = (9 * tilesize + tilesize / 2, 1.3 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
 
-    text = font.render("Evaluation " + str(eval_board() / 100), True, white)
+    text = font.render("Null move searches " + str(searched_null_moves), True, white)
     textRect = text.get_rect()
     textRect.center = (9 * tilesize + tilesize / 2, 1.6 * tilesize + tilesize / 2)
+    surface.blit(text, textRect)
+
+    text = font.render("Evaluation " + str(board_value / 100), True, white)
+    textRect = text.get_rect()
+    textRect.center = (9 * tilesize + tilesize / 2, 1.9 * tilesize + tilesize / 2)
     surface.blit(text, textRect)
 
     # text = font.render("Movelist " + str(move_history), True, white)
@@ -768,12 +771,14 @@ def make_random_move():
 
 
 def manual_game():
-    global should_null_move
-    should_null_move = False
+    global should_null_move, time_limit, should_use_hash_table
+    depth = 25
+    time_limit = 5
+    should_use_hash_table = True
+    should_null_move = True
     selected = False
     ps = None
     ds = None
-    depth = 6
     playerColor = True
     random_moves = False
     eval_board_start()
@@ -827,7 +832,6 @@ def manual_game():
 def stockfish_game(starting_string=False):
     global board
     depth = 20
-    player_color = True
 
     engine = chess.engine.SimpleEngine.popen_uci(
         "C:/Users/Luca/PycharmProjects/chessaipythonchess/engines/stockfish_14_x64_avx2.exe")
@@ -860,7 +864,6 @@ def stockfish_game(starting_string=False):
         draw_sideboard(surface)
         draw_board(surface)
         pygame.display.update()
-        player_color = not player_color
 
     print(board.fullmove_number)
     print("GAME ENDED")
@@ -869,9 +872,10 @@ def stockfish_game(starting_string=False):
 
 
 def computer_game(starting_string=False):
-    global board, should_null_move, time_limit
-    depth = 5
-    player_color = True
+    global board, should_null_move, time_limit, should_use_hash_table
+    depth = 25
+    time_limit = 5
+    should_use_hash_table = True
 
     if starting_string:
         board = chess.Board("1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5 b - - 0 1")
@@ -888,16 +892,21 @@ def computer_game(starting_string=False):
         quiesce_search = 0
         global used_trans_table_lookup
         used_trans_table_lookup = 0
+        global searched_null_moves
+        searched_null_moves = 0
 
         mov = select_move(depth)
         make_move(mov)
+        print(searched_null_moves)
+        print(best_moves)
+        print(best_moves_eval)
 
         draw_sideboard(surface)
         draw_board(surface)
         pygame.display.update()
-        player_color = not player_color
+
         if board.turn:
-            should_null_move = False
+            should_null_move = True
         else:
             should_null_move = False
 
@@ -1084,4 +1093,4 @@ def print_stats():
 
 
 if __name__ == '__main__':
-    test_engine()
+    computer_game()
