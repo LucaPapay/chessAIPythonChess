@@ -9,7 +9,7 @@ import time
 
 board = chess.Board()
 
-tilesize = 120
+tilesize = 100
 
 white = (238, 238, 213)
 black = (125, 148, 93)
@@ -362,6 +362,7 @@ def unmake_move():
 
     return mov
 
+
 def min_max_with_pruning(alpha, beta, depth_left, null_move):
     hash_type = 'alpha'
     temp = probe_hash(depth_left, alpha, beta)
@@ -375,7 +376,7 @@ def min_max_with_pruning(alpha, beta, depth_left, null_move):
 
     pos_evaluated += 1
 
-    #search for way out of check before quisce
+    # search for way out of check before quiesce
     if board.is_check():
         depth_left += 1
 
@@ -492,7 +493,6 @@ def quiesce(alpha, beta, q_depth=100):
     return alpha
 
 
-
 def sort_capture_moves(moves, min_max=True):
     rest = list()
 
@@ -501,8 +501,6 @@ def sort_capture_moves(moves, min_max=True):
     zero = list()
     negative = list()
     big_negative = list()
-
-
 
     for c in moves:
 
@@ -527,7 +525,6 @@ def sort_capture_moves(moves, min_max=True):
 
             piece_type_start = board.piece_at(c.from_square).piece_type
 
-
             if piece_type_end - piece_type_start >= 3:
                 big.append(c)
             elif piece_type_end - piece_type_start >= 1:
@@ -543,7 +540,6 @@ def sort_capture_moves(moves, min_max=True):
         elif min_max:
 
             rest.append(c)
-
 
     sorted_captures = big + med + zero + rest + negative + big_negative
     return sorted_captures
@@ -757,9 +753,9 @@ def make_random_move():
 def manual_game():
     global should_null_move, time_limit, should_use_hash_table
     depth = 25
-    time_limit = 5
+    time_limit = 8
     should_use_hash_table = True
-    should_null_move = True
+    should_null_move = False
     selected = False
     ps = None
     ds = None
@@ -769,7 +765,7 @@ def manual_game():
 
     while True:
 
-        while not board.is_checkmate():
+        while not board.is_game_over(claim_draw=True):
             draw_board(surface)
             pygame.display.update()
 
@@ -1077,4 +1073,4 @@ def print_stats():
 
 
 if __name__ == '__main__':
-    computer_game()
+    manual_game()
